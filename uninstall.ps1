@@ -67,7 +67,7 @@ function Uninstall-Global {
         Remove-Item $ConfigFile -Force
     } else {
         $currentHooksPath = git config --global core.hooksPath 2>$null
-        if ($currentHooksPath -eq $GlobalHookDir) {
+        if ($currentHooksPath -and $currentHooksPath -match "\.oh-no-coauthor") {
             git config --global --unset core.hooksPath 2>$null
             Write-Host "  Removed core.hooksPath config"
         }

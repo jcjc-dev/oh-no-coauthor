@@ -59,7 +59,7 @@ uninstall_global() {
     else
         # Check if hooksPath still points to our dir
         current_hooks_path=$(git config --global core.hooksPath 2>/dev/null || echo "")
-        if [ "$current_hooks_path" = "$GLOBAL_HOOK_DIR" ]; then
+        if echo "$current_hooks_path" | grep -q "\.oh-no-coauthor"; then
             git config --global --unset core.hooksPath || true
             echo "  Removed core.hooksPath config"
         fi
