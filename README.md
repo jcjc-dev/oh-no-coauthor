@@ -96,48 +96,19 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jcjc-dev/oh-no-coautho
 Remove-Item uninstall.ps1
 ```
 
-## How it works (the boring details)
+## Notes
 
-**Global install** creates `~/.oh-no-coauthor/hooks/` and points git at it via
-`core.hooksPath`. If you already had `core.hooksPath` set to something, the
-installer saves your old value and copies your existing hooks over.
+Global install uses `core.hooksPath` pointing to `~/.oh-no-coauthor/hooks/`.
+If you already had that set to something else, the installer saves your old
+value and the uninstaller puts it back. Existing hooks get backed up with a
+`.pre-oh-no-coauthor` suffix and are chained — nothing is lost.
 
-**Local install** drops the hooks into `.git/hooks/` directly. If you had
-existing hooks there, they get renamed with a `.pre-oh-no-coauthor` suffix and
-the new hooks chain into them — so nothing is lost.
+Only AI tool names and emails are matched. Human co-authors are never touched.
 
-The actual filtering is done with `awk` (not `sed`) because `awk` behaves the
-same on macOS, Linux, and Git Bash on Windows. No platform-specific hacks.
+To update, just run the install command again.
 
-## Existing hooks
-
-If you already have a `prepare-commit-msg` or `commit-msg` hook, the installer
-backs it up and the new hooks call into the old ones after doing their thing.
-Uninstalling restores your originals.
-
-## Updating
-
-Just run the install command again. It'll overwrite the hooks with the latest
-version.
-
-## FAQ
-
-**Will this break anything?**
-No. It only removes specific lines from commit messages. It doesn't change your
-code, your staged files, or anything else.
-
-**Does it block human co-authors?**
-No. It only matches known AI tool names and email patterns. A `Co-authored-by`
-line with a real person's name and email goes through untouched.
-
-**What if a new AI tool starts adding these?**
-Open an issue or a PR. The pattern list lives in the install scripts and is easy
-to extend.
-
-**I use `core.hooksPath` for something else already.**
-The global installer handles this — it saves your old path, copies your hooks
-over, and the uninstaller restores everything.
+New AI tool adding trailers? Open an issue or PR.
 
 ## License
 
-MIT — do whatever you want with it.
+[MIT](LICENSE)
