@@ -295,19 +295,26 @@ jobs:
 
       - name: Test local install and uninstall
         run: |
-          $repo = New-Item -ItemType Directory -Path (Join-Path $env:TEMP "ps-local-test")
-          Set-Location $repo
+          $repo = Join-Path $env:TEMP "ps-local-test-$([System.Guid]::NewGuid().ToString('N').Substring(0,8))"
+          New-Item -ItemType Directory -Path $repo | Out-Null
+          Push-Location $repo
           git init
+          Write-Host "CWD: $(Get-Location)"
 
           & "$env:GITHUB_WORKSPACE\install.ps1" -Local
 
-          if (-not (Test-Path ".git/hooks/prepare-commit-msg")) {
+          Write-Host "CWD after install: $(Get-Location)"
+          Write-Host "Hook dir contents:"
+          Get-ChildItem ".git\hooks" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.Name)" }
+
+          if (-not (Test-Path ".git\hooks\prepare-commit-msg")) {
             throw "Local hook not installed"
           }
 
           & "$env:GITHUB_WORKSPACE\uninstall.ps1" -Local
 
-          if (Test-Path ".git/hooks/prepare-commit-msg") {
+          if (Test-Path ".git\hooks\prepare-commit-msg") {
             throw "Local hook not removed"
           }
           Write-Host "PASS: Local PS install/uninstall works"
+          Pop-Location
