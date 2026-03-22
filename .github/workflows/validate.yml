@@ -284,7 +284,8 @@ jobs:
           if (Test-Path (Join-Path $hookDir "prepare-commit-msg")) {
             throw "prepare-commit-msg still exists"
           }
-          $path = git config --global core.hooksPath 2>$null; $null = $LASTEXITCODE
+          $path = git config --global core.hooksPath 2>$null
+          $global:LASTEXITCODE = 0
           if ($path) {
             throw "core.hooksPath still set: $path"
           }
