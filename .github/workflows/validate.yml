@@ -1,0 +1,312 @@
+name: Validate
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-bash:
+    name: Bash (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure git
+        run: |
+          git config --global user.name "Test User"
+          git config --global user.email "test@example.com"
+
+      # ── Global install ──
+
+      - name: Install globally
+        run: bash install.sh --global
+
+      - name: Verify global hooks exist
+        run: |
+          test -f "$HOME/.oh-no-coauthor/hooks/prepare-commit-msg"
+          test -f "$HOME/.oh-no-coauthor/hooks/commit-msg"
+          test -x "$HOME/.oh-no-coauthor/hooks/prepare-commit-msg"
+          test -x "$HOME/.oh-no-coauthor/hooks/commit-msg"
+          echo "Global hooks installed and executable"
+
+      - name: Verify core.hooksPath is set
+        run: |
+          path=$(git config --global core.hooksPath)
+          echo "core.hooksPath = $path"
+          [[ "$path" == *".oh-no-coauthor/hooks"* ]]
+
+      - name: Test global hooks strip AI trailers
+        run: |
+          repo=$(mktemp -d)
+          cd "$repo"
+          git init
+          echo "hello" > file.txt
+          git add file.txt
+
+          # Commit with AI co-author trailers — hooks should strip them
+          git commit -m "Test commit
+
+          Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+          Co-authored-by: Claude <noreply@anthropic.com>
+          Co-authored-by: Human Person <human@example.com>"
+
+          msg=$(git log -1 --format=%B)
+          echo "--- commit message ---"
+          echo "$msg"
+          echo "--- end ---"
+
+          # AI trailers must be gone
+          if echo "$msg" | grep -qi "copilot"; then
+            echo "FAIL: Copilot trailer was not stripped"
+            exit 1
+          fi
+          if echo "$msg" | grep -qi "claude"; then
+            echo "FAIL: Claude trailer was not stripped"
+            exit 1
+          fi
+
+          # Human trailer must survive
+          if ! echo "$msg" | grep -q "Human Person"; then
+            echo "FAIL: Human co-author was incorrectly stripped"
+            exit 1
+          fi
+
+          echo "PASS: AI trailers stripped, human preserved"
+
+      - name: Test more AI patterns
+        run: |
+          repo=$(mktemp -d)
+          cd "$repo"
+          git init
+          echo "x" > f.txt && git add f.txt
+
+          git commit -m "Patterns test
+
+          Co-authored-by: openai-codex <codex@openai.com>
+          Co-authored-by: Codeium <assistant@codeium.com>
+          Co-authored-by: GitHub <copilot@github.com>
+          Co-authored-by: Tabnine <ai@tabnine.com>
+          Co-authored-by: Jane Doe <jane@company.org>"
+
+          msg=$(git log -1 --format=%B)
+          echo "$msg"
+
+          for pattern in openai codex codeium tabnine "copilot@github"; do
+            if echo "$msg" | grep -qi "$pattern"; then
+              echo "FAIL: $pattern was not stripped"
+              exit 1
+            fi
+          done
+
+          if ! echo "$msg" | grep -q "Jane Doe"; then
+            echo "FAIL: Human co-author was incorrectly stripped"
+            exit 1
+          fi
+
+          echo "PASS: All AI patterns stripped"
+
+      - name: Test commit with no trailers is untouched
+        run: |
+          repo=$(mktemp -d)
+          cd "$repo"
+          git init
+          echo "y" > g.txt && git add g.txt
+          git commit -m "Just a normal commit"
+          msg=$(git log -1 --format=%B)
+          echo "$msg"
+          if ! echo "$msg" | grep -q "Just a normal commit"; then
+            echo "FAIL: Normal commit message was modified"
+            exit 1
+          fi
+          echo "PASS: Normal commit untouched"
+
+      # ── Global uninstall ──
+
+      - name: Uninstall globally
+        run: bash uninstall.sh --global
+
+      - name: Verify global hooks removed
+        run: |
+          if [ -f "$HOME/.oh-no-coauthor/hooks/prepare-commit-msg" ]; then
+            echo "FAIL: prepare-commit-msg still exists"
+            exit 1
+          fi
+          if git config --global core.hooksPath 2>/dev/null; then
+            echo "FAIL: core.hooksPath still set"
+            exit 1
+          fi
+          echo "PASS: Global uninstall clean"
+
+      # ── Local install ──
+
+      - name: Install locally
+        run: |
+          repo=$(mktemp -d)
+          cd "$repo"
+          git init
+          bash "$GITHUB_WORKSPACE/install.sh" --local
+
+          test -f .git/hooks/prepare-commit-msg
+          test -f .git/hooks/commit-msg
+          echo "Local hooks installed"
+
+          # Test it works
+          echo "z" > h.txt && git add h.txt
+          git commit -m "Local test
+
+          Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"
+
+          msg=$(git log -1 --format=%B)
+          if echo "$msg" | grep -qi "copilot"; then
+            echo "FAIL: Local hook did not strip Copilot trailer"
+            exit 1
+          fi
+          echo "PASS: Local install works"
+
+          # Uninstall
+          bash "$GITHUB_WORKSPACE/uninstall.sh" --local
+          if [ -f .git/hooks/prepare-commit-msg ]; then
+            echo "FAIL: Local uninstall did not remove hook"
+            exit 1
+          fi
+          echo "PASS: Local uninstall works"
+
+      # ── Existing hook chaining ──
+
+      - name: Test existing hooks are preserved
+        run: |
+          repo=$(mktemp -d)
+          cd "$repo"
+          git init
+          mkdir -p .git/hooks
+          echo '#!/bin/bash' > .git/hooks/prepare-commit-msg
+          echo 'echo "EXISTING_HOOK_RAN" >> /tmp/hook-chain-test' >> .git/hooks/prepare-commit-msg
+          chmod +x .git/hooks/prepare-commit-msg
+
+          bash "$GITHUB_WORKSPACE/install.sh" --local
+
+          # Original should be backed up
+          test -f .git/hooks/prepare-commit-msg.pre-oh-no-coauthor
+          echo "PASS: Existing hook backed up"
+
+          # After uninstall, original should be restored
+          bash "$GITHUB_WORKSPACE/uninstall.sh" --local
+          if ! grep -q "EXISTING_HOOK_RAN" .git/hooks/prepare-commit-msg; then
+            echo "FAIL: Original hook was not restored"
+            exit 1
+          fi
+          echo "PASS: Original hook restored after uninstall"
+
+  test-powershell:
+    name: PowerShell (windows-latest)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure git
+        run: |
+          git config --global user.name "Test User"
+          git config --global user.email "test@example.com"
+
+      # ── Global install ──
+
+      - name: Install globally
+        run: .\install.ps1
+
+      - name: Verify global hooks exist
+        run: |
+          $hookDir = Join-Path $HOME ".oh-no-coauthor/hooks"
+          if (-not (Test-Path (Join-Path $hookDir "prepare-commit-msg"))) {
+            throw "prepare-commit-msg not found"
+          }
+          if (-not (Test-Path (Join-Path $hookDir "commit-msg"))) {
+            throw "commit-msg not found"
+          }
+          Write-Host "Global hooks installed"
+
+      - name: Verify core.hooksPath is set
+        run: |
+          $path = git config --global core.hooksPath
+          Write-Host "core.hooksPath = $path"
+          if ($path -notmatch "\.oh-no-coauthor") {
+            throw "core.hooksPath not set correctly"
+          }
+
+      - name: Test hooks strip AI trailers (via PowerShell install)
+        shell: bash
+        run: |
+          repo=$(mktemp -d)
+          cd "$repo"
+          git init
+          echo "pw" > file.txt
+          git add file.txt
+
+          git commit -m "PS test
+
+          Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
+          Co-authored-by: Claude <noreply@anthropic.com>
+          Co-authored-by: Real Dev <dev@company.com>"
+
+          msg=$(git log -1 --format=%B)
+          echo "$msg"
+
+          if echo "$msg" | grep -qi "copilot"; then
+            echo "FAIL: Copilot not stripped"; exit 1
+          fi
+          if echo "$msg" | grep -qi "claude"; then
+            echo "FAIL: Claude not stripped"; exit 1
+          fi
+          if ! echo "$msg" | grep -q "Real Dev"; then
+            echo "FAIL: Human co-author stripped"; exit 1
+          fi
+          echo "PASS: PowerShell-installed hooks work"
+
+      # ── Global uninstall ──
+
+      - name: Uninstall globally
+        run: .\uninstall.ps1
+
+      - name: Verify global hooks removed
+        run: |
+          $hookDir = Join-Path $HOME ".oh-no-coauthor/hooks"
+          if (Test-Path (Join-Path $hookDir "prepare-commit-msg")) {
+            throw "prepare-commit-msg still exists"
+          }
+          $path = git config --global core.hooksPath 2>$null
+          if ($path) {
+            throw "core.hooksPath still set: $path"
+          }
+          Write-Host "PASS: Global uninstall clean"
+
+      # ── Local install ──
+
+      - name: Test local install and uninstall
+        run: |
+          $repo = New-Item -ItemType Directory -Path (Join-Path $env:TEMP "ps-local-test")
+          Set-Location $repo
+          git init
+
+          & "$env:GITHUB_WORKSPACE\install.ps1" -Local
+
+          if (-not (Test-Path ".git/hooks/prepare-commit-msg")) {
+            throw "Local hook not installed"
+          }
+
+          & "$env:GITHUB_WORKSPACE\uninstall.ps1" -Local
+
+          if (Test-Path ".git/hooks/prepare-commit-msg") {
+            throw "Local hook not removed"
+          }
+          Write-Host "PASS: Local PS install/uninstall works"
