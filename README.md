@@ -96,6 +96,27 @@ Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jcjc-dev/oh-no-coautho
 Remove-Item uninstall.ps1
 ```
 
+## Verification
+
+If you don't want to pipe curl to bash from a moving branch (fair enough),
+pin to a specific release tag instead:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jcjc-dev/oh-no-coauthor/v1.0.0/install.sh | bash
+```
+
+Or download it first and check the hash before running:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jcjc-dev/oh-no-coauthor/v1.0.0/install.sh -o install.sh
+shasum -a 256 install.sh
+# compare against the SHA256SUMS file in the release
+bash install.sh
+```
+
+Checksums for each release are in the
+[GitHub Releases](https://github.com/jcjc-dev/oh-no-coauthor/releases) page.
+
 ## Notes
 
 Global install uses `core.hooksPath` pointing to `~/.oh-no-coauthor/hooks/`.
